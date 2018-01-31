@@ -5,6 +5,7 @@
   "author": "Balazs Suhajda <balazs@onereason.earth>",
   "license": "WTFPL",
   "main": "server.js",
+  "repository": "https://github.com/suhajdab/carwings-mqtt-nodejs",
   "scripts": {
     "start": "node server.js"
   },
