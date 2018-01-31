@@ -1,0 +1,9 @@
+{
+	"username": "",
+	"password": "",
+	"regioncode": "NE",
+	"mqtt_server": "localhost",
+	"mqtt_port": 1883,
+	"command_topic": "cmnd/leaf",
+	"telemetry_topic": "tele/leaf"
+}
