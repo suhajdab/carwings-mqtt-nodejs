@@ -7,7 +7,7 @@ const mqtt = require('mqtt');
  * Using: https://github.com/blandman/carwings/
  * Protocol spec: https://github.com/blandman/carwings/blob/master/protocol.markdown
  *
- * TODO
+ * TODO id:0 gh:1
  * ☑ polling
  * ☑ config for user data
  * ☐ re-auth for HVAC toggle
