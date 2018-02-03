@@ -7,16 +7,15 @@ const mqtt = require('mqtt');
  * Using: https://github.com/blandman/carwings/
  * Protocol spec: https://github.com/blandman/carwings/blob/master/protocol.markdown
  *
- * TODO id:0 gh:1
- * ☑ polling
- * ☑ config for user data
- * ☐ re-auth for HVAC toggle
- * ☐ poll interval option
- * ☐ graceful fail when data: { status: 404 }
- * ☐ only invalidate session when neccessary
+ * TODO:20 exports and config function rather than .json
+ * TODO:50 poll interval option
+ * TODO:30 graceful fail when data: { status: 404 }
+ * TODO:40 only invalidate session when neccessary
+ * TODO:0 Geolocation possible?
+ * TODO:10 Remote HVAC schedule possible?
  */
 
-// Carwings
+// Carwings settings
 const pollInterval = 30 * 60 * 1000; // 30 min
 const minPollIntervalOnError = 30 * 1000; // 30 sec
 const maxPollIntervalOnError = 2 * 60 * 60 * 1000; // 2 h
@@ -27,13 +26,8 @@ const timeoutRetrySetHVAC = 15 * 1000; // 15 sec
 const maxRetriesSetHVAC = 3; // attemps at changing HVAC state
 var retriesSetHVAC = 0; // attempts used
 
-const options = require('./options');
 
-if (!options.username || !options.password || !options.regioncode) throw ("Config incomplete!");
-
-var cache = {};
-var cached_session = null;
-
+// mqtt client
 const client = mqtt.connect('mqtt://' + options.mqtt_server + ':' + options.mqtt_port);
 
 client.on('connect', function onConnect() {
@@ -42,48 +36,38 @@ client.on('connect', function onConnect() {
         console.log('mqtt', 'subscribe', arguments);
     });
 
-    client.publish(options.telemetry_topic, 'CONNECTED', function onPublish(err) {
-        console.log('mqtt', 'publish', arguments);
-    });
+	pollCarwings();
 });
 
 // carwings login
-function login() {
+function authenticate() {
     return new Promise(function(resolve, reject) {
-        if (cached_session) {
-            resolve(cached_session);
-        } else {
-            carwings.loginSession(options.username, options.password, options.regioncode)
-                .then(function(session) {
-                    if (typeof session !== 'function') {
-                        console.log('session not fn');
-                        reject("session is not a function");
-                    } else {
-                        cached_session = session;
-                        resolve(session);
-                    }
-                });
-        }
+        carwings.loginSession(options.username, options.password, options.regioncode)
+            .then(function(session) {
+                if (typeof session !== 'function') {
+                    console.log('session not fn');
+                    reject("session is not a function");
+                } else {
+                    resolve(session);
+                }
+            });
     });
 }
 
 // polling carwings status
-function poll() {
-    login()
+function pollCarwings() {
+    authenticate()
         .then(requestStatusCheck)
         .then(fetchData)
+        .then(parseData)
         .then(publishData)
         .then(pollTimeout)
         .catch(handlePollError);
 }
 
 function pollTimeout() {
-	console.log('pollTimeout', pollInterval);
-    setTimeout(poll, pollInterval);
-}
-
-function invalidate_session() {
-    cached_session = null;
+    console.log('pollTimeout', pollInterval);
+    setTimeout(pollCarwings, pollInterval);
 }
 
 function incrementPollIntervalOnError() {
@@ -98,7 +82,7 @@ function resetPollIntervalOnError() {
 
 function requestStatusCheck(session) {
     return new Promise(function(resolve, reject) {
-        carwings.batteryStatusCheckRequest(cached_session)
+        carwings.batteryStatusCheckRequest(session)
             .then(function(checkStatus) {
                 if (checkStatus.status == 401) {
                     reject("checkStatus.status = 401");
@@ -119,9 +103,8 @@ function fetchData(session) {
 function handlePollError(err) {
     console.log('handlePollError', err);
 
-    invalidate_session();
     incrementPollIntervalOnError();
-    setTimeout(poll, pollIntervalOnError);
+    setTimeout(pollCarwings, pollIntervalOnError);
 }
 
 function requestBatteryRecords(session) {
@@ -132,34 +115,38 @@ function requestHvacStatus(session) {
     return carwings.hvacStatus(session);
 }
 
-function publishData(data) {
-    console.log(arguments);
+function parseData(results) {
+    var data = {};
 
     try {
-        cache['status_BatteryStatusRecords'] = data[0]['status'];
-        cache['SOC'] = data[0]['BatteryStatusRecords']['BatteryStatus']['SOC']['Value'];
-        cache['isBatteryCharging'] = data[0]['BatteryStatusRecords']['BatteryStatus']['BatteryChargingStatus'] !== 'NOT_CHARGING'; // NOT_CHARGING | NORMAL_CHARGING
-        cache['CruisingRangeAcOn'] = data[0]['BatteryStatusRecords']['CruisingRangeAcOn'];
-        cache['CruisingRangeAcOff'] = data[0]['BatteryStatusRecords']['CruisingRangeAcOff'];
-        cache['isPluggedin'] = data[0]['BatteryStatusRecords']['PluginState'] !== 'NOT_CONNECTED'; // NOT_CONNECTED | CONNECTED
+        data['status_BatteryStatusRecords'] = results[0]['status'];
+        data['SOC'] = results[0]['BatteryStatusRecords']['BatteryStatus']['SOC']['Value'];
+        data['isBatteryCharging'] = results[0]['BatteryStatusRecords']['BatteryStatus']['BatteryChargingStatus'] !== 'NOT_CHARGING'; // NOT_CHARGING | NORMAL_CHARGING
+        data['CruisingRangeAcOn'] = results[0]['BatteryStatusRecords']['CruisingRangeAcOn'];
+        data['CruisingRangeAcOff'] = results[0]['BatteryStatusRecords']['CruisingRangeAcOff'];
+        data['isPluggedin'] = results[0]['BatteryStatusRecords']['PluginState'] !== 'NOT_CONNECTED'; // NOT_CONNECTED | CONNECTED
 
-        if (!data[1]['RemoteACRecords']) {
-            cache['isRemoteACOn'] = '';
-            cache['PreAC_temp'] = '';
-        } else {
-            cache['isRemoteACOn'] = (data[1]['RemoteACRecords']['RemoteACOperation'] !== 'STOP'); // START | STOP
-            cache['PreAC_temp'] = data[1]['RemoteACRecords']['PreAC_temp'];
+        if (results[1]['RemoteACRecords']) {
+            data['isRemoteACOn'] = (results[1]['RemoteACRecords']['RemoteACOperation'] !== 'STOP'); // START | STOP
+            data['PreAC_temp'] = results[1]['RemoteACRecords']['PreAC_temp'];
         }
-
-        client.publish(options.telemetry_topic, JSON.stringify(cache), function onPublish(err){
-			console.log('mqtt', 'publish', arguments);
-		});
 
     } catch (e) {
         return Promise.reject(e);
     }
 
-    return Promise.resolve(true);
+    return Promise.resolve(data);
+}
+
+function publishData(data) {
+    return new Promise(function(resolve, reject) {
+        client.publish(options.telemetry_topic, JSON.stringify(data), function onPublish(err) {
+            console.log('mqtt', 'publish', arguments);
+
+            if (err) reject(err);
+            else resolve(true);
+        });
+    });
 }
 
 // set HVAC
@@ -194,5 +181,3 @@ client.on('message', function onMessage(topic, buffer) {
 
     setHVAC(msg);
 });
-
-poll();

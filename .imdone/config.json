@@ -3,11 +3,15 @@
     "^(node_modules|bower_components|\\.imdone|target|build|dist|logs|flow-typed)[\\/\\\\]?|\\.(git|svn|hg|npmignore)|\\~$|\\.(jpg|png|gif|swp|ttf|otf)$"
   ],
   "watcher": true,
-  "keepEmptyPriority": true,
+  "keepEmptyPriority": false,
   "code": {
     "include_lists": [
       "TODO",
+      "DOING",
+      "DONE",
+      "PLANNING",
       "FIXME",
+      "ARCHIVE",
       "HACK",
       "CHANGED",
       "XXX",
