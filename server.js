@@ -7,10 +7,10 @@ const mqtt = require('mqtt');
  * Using: https://github.com/blandman/carwings/
  * Protocol spec: https://github.com/blandman/carwings/blob/master/protocol.markdown
  *
- * TODO:50 poll interval option
- * TODO:30 graceful fail when data: { status: 404 }
- * TODO:0 Geolocation possible?
- * TODO:10 Remote HVAC schedule possible?
+ * TODO: poll interval option id:3 gh:5
+ * TODO: graceful fail when data: { status: 404 } id:5 gh:7
+ * TODO: Geolocation possible? id:6 gh:8
+ * TODO: Remote HVAC schedule possible? id:2 gh:4
  * TODO: always cancel previous hvac request
  */
 
