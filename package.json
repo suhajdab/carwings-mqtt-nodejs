@@ -1,5 +1,5 @@
 {
-  "name": "carwings_mqtt-api",
+  "name": "carwings-mqtt-nodejs",
   "version": "0.0.8",
   "description": "Carwings MQTT API",
   "author": "Balazs Suhajda <balazs@onereason.earth>",
