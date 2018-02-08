@@ -11,7 +11,7 @@ const mqtt = require('mqtt');
  * TODO: graceful fail when data: { status: 404 } id:5 gh:7
  * TODO: Geolocation possible? id:6 gh:8
  * TODO: Remote HVAC schedule possible? id:2 gh:4
- * TODO: always cancel previous hvac request
+ * TODO: always cancel previous hvac request id:7 gh:10 ic:gh
  */
 
 // Carwings settings
