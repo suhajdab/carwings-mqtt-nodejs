@@ -7,12 +7,11 @@ const mqtt = require('mqtt');
  * Using: https://github.com/blandman/carwings/
  * Protocol spec: https://github.com/blandman/carwings/blob/master/protocol.markdown
  *
- * TODO:20 exports and config function rather than .json
  * TODO:50 poll interval option
  * TODO:30 graceful fail when data: { status: 404 }
- * TODO:40 only invalidate session when neccessary
  * TODO:0 Geolocation possible?
  * TODO:10 Remote HVAC schedule possible?
+ * TODO: always cancel previous hvac request
  */
 
 // Carwings settings
@@ -28,16 +27,8 @@ var retriesSetHVAC = 0; // attempts used
 
 
 // mqtt client
-const client = mqtt.connect('mqtt://' + options.mqtt_server + ':' + options.mqtt_port);
-
-client.on('connect', function onConnect() {
-    console.log('mqtt', 'connect', arguments);
-    client.subscribe(options.command_topic + '/ac', function onSubscribe(err, granted) {
-        console.log('mqtt', 'subscribe', arguments);
-    });
-
-	pollCarwings();
-});
+var mqtt_client = null,
+    options = {};
 
 // carwings login
 function authenticate() {
@@ -54,7 +45,7 @@ function authenticate() {
     });
 }
 
-// polling carwings status
+// carwings polling
 function pollCarwings() {
     authenticate()
         .then(requestStatusCheck)
@@ -140,7 +131,7 @@ function parseData(results) {
 
 function publishData(data) {
     return new Promise(function(resolve, reject) {
-        client.publish(options.telemetry_topic, JSON.stringify(data), function onPublish(err) {
+        mqtt_client.publish(options.telemetry_topic, JSON.stringify(data), function onPublish(err) {
             console.log('mqtt', 'publish', arguments);
 
             if (err) reject(err);
@@ -151,7 +142,7 @@ function publishData(data) {
 
 // set HVAC
 function setHVAC(state) {
-    login()
+    authenticate()
         .then(getHVACPromise(state))
         .catch(handleHVACError.bind(null, state));
 }
@@ -175,9 +166,39 @@ function handleHVACError(state, err) {
     }
 }
 
-client.on('message', function onMessage(topic, buffer) {
-    var msg = buffer.toString();
-    console.log(arguments);
+// MQTT client
+function onConnect() {
+	mqtt_client.subscribe(options.command_topic + '/#', function onSubscribe(err, granted) {
+		console.log('mqtt', 'subscribe', arguments);
+	});
 
-    setHVAC(msg);
-});
+	pollCarwings();
+}
+
+function onMessage(topic, buffer) {
+	var msg = buffer.toString(),
+		cmnd = topic.replace(options.command_topic, '');
+
+	console.log('onMessage', cmnd, msg);
+
+	switch (cmnd) {
+		case '/ac':
+			setHVAC(msg);
+			break;
+		default:
+			console.log('unknown cmnd:', cmnd);
+	}
+}
+
+function setup(opts) {
+    options = opts;
+    mqtt_client = mqtt.connect('mqtt://' + options.mqtt_server + ':' + options.mqtt_port, {
+        username: options.mqtt_username,
+        password: options.mqtt_password
+    });
+
+    mqtt_client.on('connect', onConnect);
+    mqtt_client.on('message', onMessage);
+}
+
+module.exports.setup = setup;

@@ -1,3 +1,4 @@
 node_modules/
 options.json
 package-lock.json
+test.js

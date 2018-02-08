@@ -5,4 +5,18 @@ This code is meant for interacting with the Nissan Leaf Carwings API. This API a
 ## Getting Started
 
 After cloning the code (and installing node.js) simply run `npm install` to install required dependencies.
-Rename `blank.options.json` to `options.json` and fill in your carwings username and password.
+Configure & run.
+```
+var config =
+{
+	"username": "",
+	"password": "",
+	"regioncode": "NE",
+	"mqtt_server": "localhost",
+	"mqtt_port": 1883,
+	"command_topic": "cmnd/leaf",
+	"telemetry_topic": "tele/leaf"
+}
+
+require('carwings-mqtt-nodejs').setup(config);
+```
