@@ -15,7 +15,7 @@ const mqtt = require('mqtt');
  */
 
 // Carwings settings
-const pollInterval = 30 * 60 * 1000; // 30 min
+const pollInterval = 20 * 60 * 1000; // 20 min
 const minPollIntervalOnError = 30 * 1000; // 30 sec
 const maxPollIntervalOnError = 2 * 60 * 60 * 1000; // 2 h
 const pollIntervalOnErrorMultiplier = 1.5;
@@ -24,6 +24,13 @@ var pollIntervalOnError = minPollIntervalOnError;
 const timeoutRetrySetHVAC = 15 * 1000; // 15 sec
 const maxRetriesSetHVAC = 3; // attemps at changing HVAC state
 var retriesSetHVAC = 0; // attempts used
+
+
+// utils
+function log() {
+    var args = [(new Date).toISOString()].concat(arguments);
+    console.log.apply(console, args);
+}
 
 
 // mqtt client
@@ -36,7 +43,7 @@ function authenticate() {
         carwings.loginSession(options.username, options.password, options.regioncode)
             .then(function(session) {
                 if (typeof session !== 'function') {
-                    console.log('session not fn');
+                    log('session not fn');
                     reject("session is not a function");
                 } else {
                     resolve(session);
@@ -57,7 +64,7 @@ function pollCarwings() {
 }
 
 function pollTimeout() {
-    console.log('pollTimeout', pollInterval);
+    log('pollTimeout', pollInterval);
     setTimeout(pollCarwings, pollInterval);
 }
 
@@ -92,7 +99,7 @@ function fetchData(session) {
 }
 
 function handlePollError(err) {
-    console.log('handlePollError', err);
+    log('handlePollError', err);
 
     incrementPollIntervalOnError();
     setTimeout(pollCarwings, pollIntervalOnError);
@@ -132,7 +139,7 @@ function parseData(results) {
 function publishData(data) {
     return new Promise(function(resolve, reject) {
         mqtt_client.publish(options.telemetry_topic, JSON.stringify(data), function onPublish(err) {
-            console.log('mqtt', 'publish', arguments);
+            log('mqtt', 'publish', arguments);
 
             if (err) reject(err);
             else resolve(true);
@@ -156,38 +163,37 @@ function getHVACPromise(state) {
 }
 
 function handleHVACError(state, err) {
-    console.log('handleHVACError', err);
+    log('handleHVACError', err);
 
-    invalidate_session();
     retriesSetHVAC++;
     if (retriesSetHVAC < maxRetriesSetHVAC) {
-        console.log('setHVAC retry #', retriesSetHVAC);
+        log('setHVAC retry #', retriesSetHVAC);
         setTimeout(setHVAC.bind(null, state), timeoutRetrySetHVAC);
     }
 }
 
 // MQTT client
 function onConnect() {
-	mqtt_client.subscribe(options.command_topic + '/#', function onSubscribe(err, granted) {
-		console.log('mqtt', 'subscribe', arguments);
-	});
+    mqtt_client.subscribe(options.command_topic + '/#', function onSubscribe(err, granted) {
+        log('mqtt', 'subscribe', arguments);
+    });
 
-	pollCarwings();
+    pollCarwings();
 }
 
 function onMessage(topic, buffer) {
-	var msg = buffer.toString(),
-		cmnd = topic.replace(options.command_topic, '');
+    var msg = buffer.toString(),
+        cmnd = topic.replace(options.command_topic, '');
 
-	console.log('onMessage', cmnd, msg);
+    log('onMessage', cmnd, msg);
 
-	switch (cmnd) {
-		case '/ac':
-			setHVAC(msg);
-			break;
-		default:
-			console.log('unknown cmnd:', cmnd);
-	}
+    switch (cmnd) {
+        case '/ac':
+            setHVAC(msg);
+            break;
+        default:
+            log('unknown cmnd:', cmnd);
+    }
 }
 
 function setup(opts) {
