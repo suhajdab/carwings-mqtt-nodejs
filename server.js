@@ -7,6 +7,7 @@ const mqtt = require('mqtt');
  * Using: https://github.com/blandman/carwings/
  * Protocol spec: https://github.com/blandman/carwings/blob/master/protocol.markdown
  *
+ * TODO: follow HVAC request with new polling, calcelling previous
  * TODO: poll interval option id:3 gh:5
  * TODO: graceful fail when data: { status: 404 } id:5 gh:7
  * TODO: Geolocation possible? id:6 gh:8
