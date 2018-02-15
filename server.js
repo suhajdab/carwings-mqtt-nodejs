@@ -1,6 +1,7 @@
 'use strict';
 const carwings = require('carwings');
 const mqtt = require('mqtt');
+const clc = require("cli-color");
 
 /**
  * Built on: https://github.com/quentinchap/hassio-repo
@@ -21,30 +22,27 @@ const minPollIntervalOnError = 30 * 1000; // 30 sec
 const maxPollIntervalOnError = 2 * 60 * 60 * 1000; // 2 h
 const pollIntervalOnErrorMultiplier = 1.5;
 var pollIntervalOnError = minPollIntervalOnError;
+var timeout;
 
 const timeoutRetrySetHVAC = 15 * 1000; // 15 sec
 const maxRetriesSetHVAC = 3; // attemps at changing HVAC state
 var retriesSetHVAC = 0; // attempts used
 
 
-// utils
-function log() {
-    var args = [(new Date).toISOString()].concat(arguments);
-    console.log.apply(console, args);
-}
-
-
-// mqtt client
+/* MQTT CLIENT */
 var mqtt_client = null,
     options = {};
 
-// carwings login
+/* CARWINGS */
+/**
+ * Carwings login
+ * @return {Promise}
+ */
 function authenticate() {
     return new Promise(function(resolve, reject) {
         carwings.loginSession(options.username, options.password, options.regioncode)
             .then(function(session) {
                 if (typeof session !== 'function') {
-                    log('session not fn');
                     reject("session is not a function");
                 } else {
                     resolve(session);
@@ -53,32 +51,44 @@ function authenticate() {
     });
 }
 
-// carwings polling
+/**
+ * Polling function using a chain of Promises
+ */
 function pollCarwings() {
     authenticate()
         .then(requestStatusCheck)
         .then(fetchData)
         .then(parseData)
         .then(publishData)
-        .then(pollTimeout)
+        .then(generateTimeout(pollCarwings, pollInterval))
         .catch(handlePollError);
 }
 
-function pollTimeout() {
-    log('pollTimeout', pollInterval);
-    setTimeout(pollCarwings, pollInterval);
+/**
+ * Increases poll interval in case of an error to reduce server load
+ * @param  {Number} currentInterval
+ * @return {Number} updated interval
+ */
+function incrementPollIntervalOnError(currentInterval) {
+    if (currentInterval * pollIntervalOnErrorMultiplier < maxPollIntervalOnError) {
+        return Math.floor(currentInterval * pollIntervalOnErrorMultiplier)
+    } else {
+        return maxPollIntervalOnError;
+    }
 }
 
-function incrementPollIntervalOnError() {
-    pollIntervalOnError = (pollIntervalOnError * pollIntervalOnErrorMultiplier < maxPollIntervalOnError) ?
-        Math.floor(pollIntervalOnError * pollIntervalOnErrorMultiplier) :
-        maxPollIntervalOnError;
-}
-
+/**
+ * reset poll interval for errors
+ */
 function resetPollIntervalOnError() {
     pollIntervalOnError = minPollIntervalOnError;
 }
 
+/**
+ * request a status update from the car (would otherwise return cached values)
+ * @param  {Function} session session returned by login
+ * @return {Promise}         resolved with session object
+ */
 function requestStatusCheck(session) {
     return new Promise(function(resolve, reject) {
         carwings.batteryStatusCheckRequest(session)
@@ -92,28 +102,34 @@ function requestStatusCheck(session) {
     });
 }
 
+/**
+ * [fetchData description]
+ * @param  {Function} session Session from Carwings login
+ * @return {Promise}         Promise of requests from Carwings API
+ */
 function fetchData(session) {
     return Promise.all([
-        requestBatteryRecords(session),
-        requestHvacStatus(session)
+        carwings.batteryRecords(session),
+        carwings.hvacStatus(session)
     ]);
 }
 
+/**
+ * rejected poll handler, schedules next attempt
+ * @param  {Error} err Cause of Promise rejection
+ */
 function handlePollError(err) {
-    log('handlePollError', err);
+    console.error('handlePollError', err);
 
-    incrementPollIntervalOnError();
-    setTimeout(pollCarwings, pollIntervalOnError);
+    pollIntervalOnError = incrementPollIntervalOnError(pollIntervalOnError);
+    generateTimeout(pollCarwings, pollIntervalOnError)();
 }
 
-function requestBatteryRecords(session) {
-    return carwings.batteryRecords(session);
-}
-
-function requestHvacStatus(session) {
-    return carwings.hvacStatus(session);
-}
-
+/**
+ * Carwings data filtering and parsing
+ * @param  {Object} results raw data from Carwings API
+ * @return {Promise}         Promise of parsing
+ */
 function parseData(results) {
     var data = {};
 
@@ -137,10 +153,15 @@ function parseData(results) {
     return Promise.resolve(data);
 }
 
+/**
+ * Publish data retrieved from Carwings API to mqtt
+ * @param  {Object} data Carwings data
+ * @return {Promise}      Promise of publishing data
+ */
 function publishData(data) {
     return new Promise(function(resolve, reject) {
         mqtt_client.publish(options.telemetry_topic, JSON.stringify(data), function onPublish(err) {
-            log('mqtt', 'publish', arguments);
+            console.log('mqtt', 'publish', arguments);
 
             if (err) reject(err);
             else resolve(true);
@@ -148,13 +169,21 @@ function publishData(data) {
     });
 }
 
-// set HVAC
+/**
+ * Promise chain for HVAC requests
+ * @param {[type]} state [description]
+ */
 function setHVAC(state) {
     authenticate()
         .then(getHVACPromise(state))
         .catch(handleHVACError.bind(null, state));
 }
 
+/**
+ * Generate function with Promise for the requested HVAC state
+ * @param  {String} state requested state of HVAC
+ * @return {Function}       request promise
+ */
 function getHVACPromise(state) {
     return function setHVACstate(session) {
         if (state == 'ON') return carwings.hvacOn(session);
@@ -163,40 +192,59 @@ function getHVACPromise(state) {
     }
 }
 
+/**
+ * handler for rejected HVAC request promise
+ * @param  {[type]} state [description]
+ * @param  {[type]} err   [description]
+ * @return {[type]}       [description]
+ */
 function handleHVACError(state, err) {
-    log('handleHVACError', err);
+    console.error('handleHVACError', err);
 
     retriesSetHVAC++;
     if (retriesSetHVAC < maxRetriesSetHVAC) {
-        log('setHVAC retry #', retriesSetHVAC);
-        setTimeout(setHVAC.bind(null, state), timeoutRetrySetHVAC);
+        console.warn('setHVAC retry #', retriesSetHVAC);
+        generateTimeout(setHVAC.bind(null, state), timeoutRetrySetHVAC)();
     }
 }
 
 // MQTT client
+/**
+ * mqtt connect event handler, subscribes to command topic and starts polling
+ */
 function onConnect() {
     mqtt_client.subscribe(options.command_topic + '/#', function onSubscribe(err, granted) {
-        log('mqtt', 'subscribe', arguments);
+        if (err) console.error('mqtt', 'subscribe', err);
+        else console.log('mqtt', 'subscribe', granted);
     });
 
     pollCarwings();
 }
 
+/**
+ * mqtt message event handler, executing carwings functions based on topic
+ * @param  {String} topic  topic of the received packet
+ * @param  {Buffer} buffer payload of the received packet
+ */
 function onMessage(topic, buffer) {
     var msg = buffer.toString(),
         cmnd = topic.replace(options.command_topic, '');
 
-    log('onMessage', cmnd, msg);
+    console.log('onMessage', cmnd, msg);
 
     switch (cmnd) {
         case '/ac':
             setHVAC(msg);
             break;
         default:
-            log('unknown cmnd:', cmnd);
+            console.warn('unknown cmnd:', cmnd);
     }
 }
 
+/**
+ * Initialize modue with options
+ * @param  {Object} opts Configuration object
+ */
 function setup(opts) {
     options = opts;
     mqtt_client = mqtt.connect('mqtt://' + options.mqtt_server + ':' + options.mqtt_port, {
@@ -206,6 +254,49 @@ function setup(opts) {
 
     mqtt_client.on('connect', onConnect);
     mqtt_client.on('message', onMessage);
+}
+
+
+/* UTILS */
+/**
+ * Prettier logging with timestamp
+ * src: https://medium.com/@garychambers108/better-logging-in-node-js-b3cc6fd0dafd
+ */
+var mapping = {
+    log: clc.blue,
+    warn: clc.yellow,
+    error: clc.red
+};
+
+["log", "warn", "error"].forEach(function(method) {
+    var oldMethod = console[method].bind(console);
+    console[method] = function() {
+        oldMethod.apply(
+            console, [mapping[method](new Date().toISOString())]
+            .concat(arguments)
+        );
+    };
+});
+
+/**
+ * Generate a timeout
+ * @param  {Function} fn function to execute after timeout
+ * @param  {[type]}   t  timeout in millisec
+ * @return {[type]}      function
+ */
+function generateTimeout(fn, t) {
+    return function pollTimeout() {
+        clearTimeout(timeout);
+
+        return new Promise(function(resolve, reject) {
+
+            console.log('pollTimeout', t);
+            timeout = setTimeout(function timedOutFn() {
+                fn();
+                resolve();
+            }, t);
+        });
+    }
 }
 
 module.exports.setup = setup;

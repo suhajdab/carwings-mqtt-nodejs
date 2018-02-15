@@ -1,6 +1,6 @@
 {
   "name": "carwings-mqtt-nodejs",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Carwings MQTT API",
   "author": "Balazs Suhajda <balazs@onereason.earth>",
   "license": "WTFPL",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "carwings": "https://github.com/suhajdab/carwings.git",
+    "cli-color": "^1.2.0",
     "mqtt": "^2.15.1"
   }
 }
