@@ -8,12 +8,10 @@ const clc = require("cli-color");
  * Using: https://github.com/blandman/carwings/
  * Protocol spec: https://github.com/blandman/carwings/blob/master/protocol.markdown
  *
- * TODO: follow HVAC request with new polling, calcelling previous id:8 gh:13 ic:gh
  * TODO: poll interval option id:3 gh:5
  * TODO: graceful fail when data: { status: 404 } id:5 gh:7
  * TODO: Geolocation possible? id:6 gh:8
  * TODO: Remote HVAC schedule possible? id:2 gh:4
- * TODO: always cancel previous hvac request id:7 gh:10 ic:gh
  */
 
 // Carwings settings
@@ -143,7 +141,7 @@ function parseData(results) {
         data['isPluggedin'] = results[0]['BatteryStatusRecords']['PluginState'] !== 'NOT_CONNECTED'; // NOT_CONNECTED | CONNECTED
 
         if (results[1]['RemoteACRecords']) {
-            data['isRemoteACOn'] = (results[1]['RemoteACRecords']['RemoteACOperation'] !== 'STOP'); // START | STOP
+            data['RemoteACState'] = (results[1]['RemoteACRecords']['RemoteACOperation'] !== 'STOP') ? 'ON' : 'OFF'; // START | STOP
             data['PreAC_temp'] = results[1]['RemoteACRecords']['PreAC_temp'];
         }
 
@@ -188,9 +186,11 @@ function setHVAC(state) {
  */
 function getHVACPromise(state) {
     return function setHVACstate(session) {
-        if (state === true) return carwings.hvacOn(session);
-        else if (state === false) return carwings.hvacOff(session);
-        else return Promise.reject('setHVACstate: unknown state');
+        if (state === 'ON') return carwings.hvacOn(session);
+        else if (state === 'OFF') return carwings.hvacOff(session);
+
+		console.warn('setHVACstate: unknown state', state);
+		return Promise.resolve(true);
     }
 }
 
@@ -277,7 +277,7 @@ var mapping = {
     var oldMethod = console[method].bind(console);
     console[method] = function() {
         oldMethod.apply(
-            console, [mapping[method](new Date().toISOString())]
+            console, [mapping[method](new Date().toLocaleString())]
             .concat(arguments)
         );
     };
