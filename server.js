@@ -186,8 +186,8 @@ function setHVAC(state) {
  */
 function getHVACPromise(state) {
     return function setHVACstate(session) {
-        if (state == 'ON') return carwings.hvacOn(session);
-        else if (state == 'OFF') return carwings.hvacOff(session);
+        if (state === true) return carwings.hvacOn(session);
+        else if (state === false) return carwings.hvacOff(session);
         else return Promise.reject('setHVACstate: unknown state');
     }
 }
@@ -205,7 +205,9 @@ function handleHVACError(state, err) {
     if (retriesSetHVAC < maxRetriesSetHVAC) {
         console.warn('setHVAC retry #', retriesSetHVAC);
         generateTimeout(setHVAC.bind(null, state), timeoutRetrySetHVAC)();
-    }
+    } else {
+		console.error('Max number of retries for setHVAC. Will not continue.')
+	}
 }
 
 // MQTT client
@@ -290,7 +292,7 @@ function generateTimeout(fn, t) {
 
         return new Promise(function(resolve, reject) {
 
-            console.log('pollTimeout', t);
+            console.log(`"${fn.name}" timeout: ${Math.round(t/1000/60)} min`);
             timeout = setTimeout(function timedOutFn() {
                 fn();
                 resolve();
