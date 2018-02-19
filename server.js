@@ -18,6 +18,7 @@ const clc = require("cli-color");
 
 // Carwings settings
 const pollInterval = 20 * 60 * 1000; // 20 min
+const pollTimeoutAfterHVAC = 30 * 1000; // 30 sec
 const minPollIntervalOnError = 30 * 1000; // 30 sec
 const maxPollIntervalOnError = 2 * 60 * 60 * 1000; // 2 h
 const pollIntervalOnErrorMultiplier = 1.5;
@@ -176,6 +177,7 @@ function publishData(data) {
 function setHVAC(state) {
     authenticate()
         .then(getHVACPromise(state))
+		.then(generateTimeout(pollCarwings, pollTimeoutAfterHVAC))
         .catch(handleHVACError.bind(null, state));
 }
 
@@ -206,7 +208,8 @@ function handleHVACError(state, err) {
         console.warn('setHVAC retry #', retriesSetHVAC);
         generateTimeout(setHVAC.bind(null, state), timeoutRetrySetHVAC)();
     } else {
-		console.error('Max number of retries for setHVAC. Will not continue.')
+		console.error('Max number of retries for setHVAC. Will not continue.');
+        pollCarwings();
 	}
 }
 
