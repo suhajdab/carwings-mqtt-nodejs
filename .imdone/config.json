@@ -18,10 +18,15 @@
       "IDEA",
       "NOTE",
       "REVIEW",
-      "MARK"
+      "MARK",
+      "HELP"
     ]
   },
   "lists": [
+    {
+      "name": "HELP",
+      "hidden": false
+    },
     {
       "name": "TODO",
       "hidden": false
@@ -39,5 +44,6 @@
     "id": "5a761c0f8e15fc0bd32630ff",
     "name": "suhajdab/carwings-mqtt-nodejs",
     "useImdoneioForPriority": true
-  }
+  },
+  "noHelp": true
 }
