@@ -39,7 +39,7 @@ var mqtt_client = null,
  * Polling function using a chain of Promises
  */
 async function pollCarwings() {
-    // await nc.getBatteryStatus();
+    await nc.getBatteryStatus();
     let latestBattery = await nc.getLastBatteryStatus();
     let ac = await nc.getAcSchedule();
 
