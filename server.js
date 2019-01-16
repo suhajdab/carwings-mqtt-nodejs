@@ -1,5 +1,6 @@
 'use strict';
-const carwings = require('carwings');
+const { NissanConnect } = require('@beejjacobs/nissan-connect');
+
 const mqtt = require('mqtt');
 const clc = require("cli-color");
 
@@ -16,7 +17,7 @@ const clc = require("cli-color");
  */
 
 // Carwings settings
-const pollInterval = 20 * 60 * 1000; // 20 min
+const pollInterval = 30 * 60 * 1000; // 30 min
 const pollTimeoutAfterHVAC = 30 * 1000; // 30 sec
 const minPollIntervalOnError = 30 * 1000; // 30 sec
 const maxPollIntervalOnError = 2 * 60 * 60 * 1000; // 2 h
@@ -31,34 +32,19 @@ var retriesSetHVAC = 0; // attempts used
 
 /* MQTT CLIENT */
 var mqtt_client = null,
+    nc = {},
     options = {};
 
 /* CARWINGS */
 /**
- * Carwings login
- * @return {Promise}
- */
-function authenticate() {
-    return new Promise(function(resolve, reject) {
-        carwings.loginSession(options.username, options.password, options.regioncode)
-            .then(function(session) {
-                if (typeof session !== 'function') {
-                    reject("session is not a function");
-                } else {
-                    resolve(session);
-                }
-            });
-    });
-}
-
-/**
  * Polling function using a chain of Promises
  */
-function pollCarwings() {
-    authenticate()
-        .then(requestStatusCheck)
-        .then(fetchData)
-        .then(parseData)
+async function pollCarwings() {
+    await nc.getBatteryStatus();
+    let latestBattery = await nc.getLastBatteryStatus();
+    let ac = await nc.getAcSchedule();
+
+    parseData([latestBattery.info, ac.info])
         .then(publishData)
         .then(generateTimeout(pollCarwings, pollInterval))
         .catch(handlePollError);
@@ -82,36 +68,6 @@ function incrementPollIntervalOnError(currentInterval) {
  */
 function resetPollIntervalOnError() {
     pollIntervalOnError = minPollIntervalOnError;
-}
-
-/**
- * request a status update from the car (would otherwise return cached values)
- * @param  {Function} session session returned by login
- * @return {Promise}         resolved with session object
- */
-function requestStatusCheck(session) {
-    return new Promise(function(resolve, reject) {
-        carwings.batteryStatusCheckRequest(session)
-            .then(function(checkStatus) {
-                if (checkStatus.status == 401) {
-                    reject("checkStatus.status = 401");
-                } else {
-                    resolve(session);
-                }
-            });
-    });
-}
-
-/**
- * [fetchData description]
- * @param  {Function} session Session from Carwings login
- * @return {Promise}         Promise of requests from Carwings API
- */
-function fetchData(session) {
-    return Promise.all([
-        carwings.batteryRecords(session),
-        carwings.hvacStatus(session)
-    ]);
 }
 
 /**
@@ -173,45 +129,11 @@ function publishData(data) {
  * Promise chain for HVAC requests
  * @param {[type]} state [description]
  */
-function setHVAC(state) {
-    authenticate()
-        .then(getHVACPromise(state))
-		.then(generateTimeout(pollCarwings, pollTimeoutAfterHVAC))
-        .catch(handleHVACError.bind(null, state));
-}
+async function setHVAC(state) {
+    if (state === 'ON') await nc.acOn();
+    else if (state === 'OFF') await nc.acOff();
 
-/**
- * Generate function with Promise for the requested HVAC state
- * @param  {String} state requested state of HVAC
- * @return {Function}       request promise
- */
-function getHVACPromise(state) {
-    return function setHVACstate(session) {
-        if (state === 'ON') return carwings.hvacOn(session);
-        else if (state === 'OFF') return carwings.hvacOff(session);
-
-		console.warn('setHVACstate: unknown state', state);
-		return Promise.resolve(true);
-    }
-}
-
-/**
- * handler for rejected HVAC request promise
- * @param  {[type]} state [description]
- * @param  {[type]} err   [description]
- * @return {[type]}       [description]
- */
-function handleHVACError(state, err) {
-    console.error('handleHVACError', err);
-
-    retriesSetHVAC++;
-    if (retriesSetHVAC < maxRetriesSetHVAC) {
-        console.warn('setHVAC retry #', retriesSetHVAC);
-        generateTimeout(setHVAC.bind(null, state), timeoutRetrySetHVAC)();
-    } else {
-		console.error('Max number of retries for setHVAC. Will not continue.');
-        pollCarwings();
-	}
+    publishData({RemoteACState: state});
 }
 
 // MQTT client
@@ -260,6 +182,8 @@ function setup(opts) {
 
     mqtt_client.on('connect', onConnect);
     mqtt_client.on('message', onMessage);
+
+    nc = new NissanConnect(options.username, options.password);
 }
 
 
