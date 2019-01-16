@@ -12,6 +12,7 @@ const clc = require("cli-color");
  * TODO: graceful fail when data: { status: 404 } id:5 gh:7
  * TODO: Geolocation possible? id:6 gh:8
  * TODO: Remote HVAC schedule possible? id:2 gh:4
+ * TODO: Add polling flag to disable polling to conserve battery (+mqtt topic)
  */
 
 // Carwings settings
@@ -160,7 +161,7 @@ function parseData(results) {
 function publishData(data) {
     return new Promise(function(resolve, reject) {
         mqtt_client.publish(options.telemetry_topic, JSON.stringify(data), function onPublish(err) {
-            console.log('mqtt', 'publish', arguments);
+            console.log('mqtt', 'publish', data);
 
             if (err) reject(err);
             else resolve(true);
