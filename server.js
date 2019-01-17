@@ -13,7 +13,7 @@ const clc = require("cli-color");
  * TODO: graceful fail when data: { status: 404 } id:5 gh:7
  * TODO: Geolocation possible? id:6 gh:8
  * TODO: Remote HVAC schedule possible? id:2 gh:4
- * TODO: Add polling flag to disable polling to conserve battery (+mqtt topic)
+ * TODO: Add polling flag to disable polling to conserve battery (+mqtt topic) id:15 gh:17
  */
 
 // Carwings settings
