@@ -40,14 +40,18 @@ var mqtt_client = null,
  * Polling function using a chain of Promises
  */
 async function pollCarwings() {
-    await nc.getBatteryStatus();
-    let latestBattery = await nc.getLastBatteryStatus();
-    let ac = await nc.getAcSchedule();
+    try {
+        // let battery = await nc.getBatteryStatus();
+        let latestBattery = await nc.getLastBatteryStatus();
+        let ac = await nc.getAcSchedule();
 
-    parseData([latestBattery.info, ac.info])
-        .then(publishData)
-        .then(generateTimeout(pollCarwings, pollInterval))
-        .catch(handlePollError);
+        parseData([latestBattery.info, ac.info])
+            .then(publishData)
+            .then(generateTimeout(pollCarwings, pollInterval))
+            .catch(handlePollError);
+    } catch (e) {
+        handlePollError(e);
+    }
 }
 
 /**
